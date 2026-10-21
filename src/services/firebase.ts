@@ -11,6 +11,17 @@ import {
 } from "firebase/database";
 import { TelemetryData, ControlParameters, EventLog } from "../types";
 
+export const defaultFirebaseConfig = {
+  apiKey: "AIzaSyDRqBoh11BuZHcqYkOPHrbtkudrbKbyD4",
+  authDomain: "iot-uts-264a9.firebaseapp.com",
+  databaseURL: "https://iot-uts-264a9-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "iot-uts-264a9",
+  storageBucket: "iot-uts-264a9.firebasestorage.app",
+  messagingSenderId: "604382295790",
+  appId: "1:604382295790:web:bdf60dcb3dfe89d289a5ff",
+  measurementId: "G-77J35ZD73W"
+};
+
 class FirebaseService {
   private app: FirebaseApp | null = null;
   private db: Database | null = null;
@@ -53,16 +64,19 @@ class FirebaseService {
   ) => void)[] = [];
 
   public init(databaseURL?: string) {
-    const savedUrl = databaseURL || localStorage.getItem("fb_database_url");
-
-    if (!savedUrl) {
-      this.startSimulator();
-      return;
-    }
+    const targetUrl =
+      databaseURL ||
+      localStorage.getItem("fb_database_url") ||
+      defaultFirebaseConfig.databaseURL;
 
     try {
+      const cfg = {
+        ...defaultFirebaseConfig,
+        databaseURL: targetUrl
+      };
+
       if (!getApps().length) {
-        this.app = initializeApp({ databaseURL: savedUrl });
+        this.app = initializeApp(cfg);
       } else {
         this.app = getApp();
       }
@@ -75,7 +89,7 @@ class FirebaseService {
       this.attachFirebaseListeners();
       this.logEvent(
         "STATE",
-        "Terhubung ke Firebase Realtime Database: " + savedUrl
+        "Terhubung ke Firebase Realtime Database: " + targetUrl
       );
     } catch (err: any) {
       console.error("Firebase init failed:", err);

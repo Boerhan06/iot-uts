@@ -28,9 +28,8 @@
 const char* WIFI_SSID = "Wokwi-GUEST";
 const char* WIFI_PASS = "";
 
-// Ganti URL Firebase berikut sesuai dengan Project Firebase Anda
-// Contoh: "https://uts-iot-kelompok6-default-rtdb.firebaseio.com"
-String FIREBASE_HOST = "https://uts-iot-topik6-default-rtdb.firebaseio.com";
+// URL Realtime Database Project Firebase Anda
+String FIREBASE_HOST = "https://iot-uts-264a9-default-rtdb.asia-southeast1.firebasedatabase.app";
 String FIREBASE_AUTH = ""; // Kosongkan jika Security Rules diatur read/write
 
 // -------------------------------------------------------------
