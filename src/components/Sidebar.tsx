@@ -45,11 +45,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Logo Brand */}
         <div className="flex items-center gap-3 px-4 mb-8">
           <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white font-extrabold text-xl shadow-blueGlow">
-            T
+            6
           </div>
           <div className="flex items-baseline">
             <span className="text-xl font-extrabold text-slate-900 tracking-tight">
-              TYYYYAS
+              Kelompok 6
             </span>
             <span className="w-1.5 h-1.5 rounded-full bg-blue-600 ml-0.5"></span>
           </div>
