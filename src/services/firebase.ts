@@ -25,7 +25,7 @@ import {
 } from "../types";
 
 export const defaultFirebaseConfig = {
-  apiKey: "AIzaSyDRqBoh11BuZHcqYkOPHrbtkudrbKbyD4",
+  apiKey: "AIzaSyDRqBoh11BuZHcqYkOPHrqbtkudrbKbyD4",
   authDomain: "iot-uts-264a9.firebaseapp.com",
   databaseURL: "https://iot-uts-264a9-default-rtdb.firebaseio.com",
   projectId: "iot-uts-264a9",
@@ -36,7 +36,7 @@ export const defaultFirebaseConfig = {
 };
 
 export const defaultAuthCredentials = {
-  email: "es32.kelompok6@gmail.com",
+  email: "esp32.kelompok6@gmail.com",
   password: "Mkbsehat",
   uid: "DJOtoRAtJqQOgBNzDBgkP2pTtY83"
 };
@@ -53,10 +53,10 @@ class FirebaseService {
 
   // Active state caches matching Firebase RTDB
   public telemetry: TelemetryData = {
-    temperature: 34.6,
+    temperature: 26.7,
     vibration_g: 0.0,
-    state: "IDLE",
-    motor_led: false,
+    state: "RUNNING",
+    motor_led: true,
     buzzer: false,
     fault_duration_sec: 0.0,
     timestamp: Date.now() / 1000
@@ -93,16 +93,11 @@ class FirebaseService {
   private authCallbacks: ((info: AuthUserInfo) => void)[] = [];
 
   public async init(databaseURL?: string) {
-    let targetUrl =
-      databaseURL ||
-      localStorage.getItem("fb_database_url") ||
-      defaultFirebaseConfig.databaseURL;
+    const targetUrl =
+      databaseURL && databaseURL.trim().length > 0
+        ? databaseURL.trim().replace(/\/+$/, "")
+        : defaultFirebaseConfig.databaseURL;
 
-    // Normalisasi: buang trailing slash dan perbarui jika masih cache domain lama
-    targetUrl = targetUrl.trim().replace(/\/+$/, "");
-    if (targetUrl.includes("asia-southeast1.firebasedatabase.app")) {
-      targetUrl = defaultFirebaseConfig.databaseURL;
-    }
     localStorage.setItem("fb_database_url", targetUrl);
 
     try {
@@ -120,13 +115,16 @@ class FirebaseService {
       this.db = getDatabase(this.app);
       this.auth = getAuth(this.app);
       this.isSimulated = false;
-      if (this.simInterval) clearInterval(this.simInterval);
+      if (this.simInterval) {
+        clearInterval(this.simInterval);
+        this.simInterval = null;
+      }
 
       this.notifyConnection(true, "ONLINE (FIREBASE)");
-      this.attachFirebaseListeners();
 
-      // Firebase Authentication with user credentials
-      this.setupAuthentication();
+      // Firebase Authentication with user credentials first
+      await this.setupAuthentication();
+      this.attachFirebaseListeners();
 
       this.logEvent(
         "STATE",
@@ -150,6 +148,7 @@ class FirebaseService {
           isAuthenticated: true
         };
         this.notifyAuth(this.authInfo);
+        this.notifyConnection(true, "ONLINE (FIREBASE)");
         this.logEvent(
           "STATE",
           `Firebase Auth aktif: ${user.email} (UID: ${user.uid.substring(0, 8)}...)`
@@ -165,14 +164,21 @@ class FirebaseService {
     });
 
     try {
-      await signInWithEmailAndPassword(
+      const cred = await signInWithEmailAndPassword(
         this.auth,
         defaultAuthCredentials.email,
         defaultAuthCredentials.password
       );
+      console.log("[Firebase Auth] Sukses login:", cred.user.email, cred.user.uid);
+      this.authInfo = {
+        email: cred.user.email,
+        uid: cred.user.uid,
+        isAuthenticated: true
+      };
+      this.notifyAuth(this.authInfo);
+      this.notifyConnection(true, "ONLINE (FIREBASE)");
     } catch (authErr: any) {
-      console.warn("Auto-login error (fallback to verified badge):", authErr.message);
-      // Fallback state if offline or network timeout
+      console.error("[Firebase Auth Login Error]:", authErr.message);
       this.authInfo = {
         email: defaultAuthCredentials.email,
         uid: defaultAuthCredentials.uid,
@@ -251,12 +257,17 @@ class FirebaseService {
           ? Number(val.vibration_g)
           : this.telemetry.vibration_g;
 
-      const st = (val.state || this.telemetry.state) as MachineState;
+      let st = (val.state || this.telemetry.state) as MachineState;
+      if (st === "RUNNING") {
+        st = "NORMAL";
+      }
+
       const relayOn =
         val.relay === "ON" ||
         val.relay === true ||
         val.motor_led === true ||
-        val.motorRunning === true;
+        val.motorRunning === true ||
+        val.state === "RUNNING";
       const buzzOn =
         val.buzzer === true || val.buzzerActive === true || st === "TRIP";
       const faultDur =
@@ -285,14 +296,21 @@ class FirebaseService {
       this.notifyConnection(true, "ONLINE (FIREBASE)");
     };
 
-    // 1A. Listen to /status (Real schema from ESP32 Wokwi / Console)
+    // 1A. Listen to mesin6/status (Actual Realtime Database schema from ESP32 Wokwi)
+    const mesin6StatusRef = ref(this.db, "mesin6/status");
+    onValue(mesin6StatusRef, (snapshot) => {
+      const val = snapshot.val();
+      if (val) applyTelemetry(val);
+    });
+
+    // 1B. Listen to /status (Fallback)
     const statusRef = ref(this.db, "status");
     onValue(statusRef, (snapshot) => {
       const val = snapshot.val();
       if (val) applyTelemetry(val);
     });
 
-    // 1B. Listen to /machine_monitor/telemetry
+    // 1C. Listen to /machine_monitor/telemetry (Fallback)
     const telemetryRef = ref(this.db, "machine_monitor/telemetry");
     onValue(telemetryRef, (snapshot) => {
       const val = snapshot.val();
@@ -358,14 +376,25 @@ class FirebaseService {
       this.controlsCallbacks.forEach((cb) => cb(this.controls));
     };
 
-    // 2A. Listen to root for controls (tempTrip, tempWarning, vibTrip, vibWarning, mode, simSensorFault)
-    const rootRef = ref(this.db);
-    onValue(rootRef, (snapshot) => {
+    // 2A. Listen to mesin6/control
+    const mesin6ControlRef = ref(this.db, "mesin6/control");
+    onValue(mesin6ControlRef, (snapshot) => {
       const val = snapshot.val();
       if (val) applyControls(val);
     });
 
-    // 2B. Listen to machine_monitor/controls
+    // 2B. Listen to root for controls
+    const rootRef = ref(this.db);
+    onValue(rootRef, (snapshot) => {
+      const val = snapshot.val();
+      if (val && val.mesin6 && val.mesin6.control) {
+        applyControls(val.mesin6.control);
+      } else if (val) {
+        applyControls(val);
+      }
+    });
+
+    // 2C. Listen to machine_monitor/controls
     const controlsRef = ref(this.db, "machine_monitor/controls");
     onValue(controlsRef, (snapshot) => {
       const val = snapshot.val();
@@ -397,29 +426,55 @@ class FirebaseService {
           item.description ||
           JSON.stringify(item);
         const upper = msg.toUpperCase();
-        let type: EventLog["type"] =
-          item.type ||
-          (upper.includes("TRIP") || upper.includes("ALARM")
-            ? "ALARM"
-            : upper.includes("DITOLAK") || upper.includes("REJECT")
-            ? "INTERLOCK_REJECT"
-            : upper.includes("MODE")
-            ? "MODE"
-            : "STATE");
+        const rawType = (item.type || "").toUpperCase();
+        let type: EventLog["type"] = "STATE";
+
+        if (
+          rawType === "CMD_REJECTED" ||
+          upper.includes("DITOLAK") ||
+          upper.includes("REJECT")
+        ) {
+          type = "INTERLOCK_REJECT";
+        } else if (
+          rawType === "ALARM" ||
+          rawType === "ALARM_ACK" ||
+          upper.includes("TRIP") ||
+          upper.includes("ALARM")
+        ) {
+          type = "ALARM";
+        } else if (
+          rawType === "FAULT" ||
+          upper.includes("FAULT") ||
+          upper.includes("NAN")
+        ) {
+          type = "FAULT";
+        } else if (rawType === "MODE" || upper.includes("MODE")) {
+          type = "MODE";
+        } else {
+          type = "STATE";
+        }
+
         return { id: k, timestamp, type, message: msg };
       });
       this.eventLogs = loaded;
       this.logsCallbacks.forEach((cb) => cb(this.eventLogs));
     };
 
-    // 3A. Listen to /events
+    // 3A. Listen to mesin6/events
+    const mesin6EventsRef = query(ref(this.db, "mesin6/events"), limitToLast(60));
+    onValue(mesin6EventsRef, (snapshot) => {
+      const val = snapshot.val();
+      if (val) applyEvents(val);
+    });
+
+    // 3B. Listen to /events
     const eventsRef = query(ref(this.db, "events"), limitToLast(60));
     onValue(eventsRef, (snapshot) => {
       const val = snapshot.val();
       if (val) applyEvents(val);
     });
 
-    // 3B. Listen to /machine_monitor/event_logs
+    // 3C. Listen to /machine_monitor/event_logs
     const logsRef = query(
       ref(this.db, "machine_monitor/event_logs"),
       limitToLast(60)
@@ -440,6 +495,7 @@ class FirebaseService {
     }
 
     if (this.db) {
+      set(ref(this.db, "mesin6/control/mode"), mode);
       update(ref(this.db), { mode });
       set(ref(this.db, "status/mode"), mode);
       set(ref(this.db, "machine_monitor/controls/mode"), mode);
@@ -455,6 +511,11 @@ class FirebaseService {
 
     if (this.db) {
       const cmdId = Date.now();
+      update(ref(this.db, "mesin6/control"), {
+        cmdId: cmdId,
+        cmd: cmd,
+        command: cmd
+      });
       update(ref(this.db), {
         cmdId: cmdId,
         command: cmd
@@ -487,6 +548,7 @@ class FirebaseService {
       if (params.vib_trip_limit !== undefined) {
         updates.vibTrip = params.vib_trip_limit;
       }
+      update(ref(this.db, "mesin6/control"), updates);
       update(ref(this.db), updates);
       update(ref(this.db, "machine_monitor/controls"), params);
       this.logEvent("PARAM", "Parameter ambang batas disimpan ke Firebase");
@@ -503,6 +565,7 @@ class FirebaseService {
           : "Fault Injection Skenario 4: Sensor dinormalkan"
       );
     } else if (this.db) {
+      set(ref(this.db, "mesin6/control/simSensorFault"), active);
       update(ref(this.db), { simSensorFault: active });
       set(ref(this.db, "status/sensorFault"), active);
       set(ref(this.db, "machine_monitor/controls/fault_sensor_corrupt"), active);

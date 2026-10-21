@@ -13,7 +13,7 @@ export const StateRadialCard: React.FC<StateRadialCardProps> = ({
 }) => {
   const isTrip = state === "TRIP";
   const isWarning = state === "WARNING";
-  const isNormal = state === "NORMAL";
+  const isNormal = state === "NORMAL" || state === "RUNNING";
 
   const percent =
     healthPercent ?? (isTrip ? 0 : isWarning ? 65 : isNormal ? 100 : 90);

@@ -53,7 +53,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
           <div className="flex flex-col">
             <span className="text-[11px] font-bold text-slate-800 leading-tight flex items-center gap-1">
-              {authInfo.email || "es32.kelompok6@gmail.com"}
+              {authInfo.email || "esp32.kelompok6@gmail.com"}
               <CheckCircle2 className="w-3 h-3 text-emerald-500 inline" />
             </span>
             <span className="text-[9px] font-mono-numbers text-slate-400">

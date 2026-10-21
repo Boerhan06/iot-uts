@@ -1,4 +1,4 @@
-export type MachineState = "IDLE" | "NORMAL" | "WARNING" | "TRIP";
+export type MachineState = "IDLE" | "NORMAL" | "WARNING" | "TRIP" | "RUNNING" | "RECOVERY";
 
 export interface TelemetryData {
   temperature: number;
