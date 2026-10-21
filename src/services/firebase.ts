@@ -26,8 +26,7 @@ import {
 export const defaultFirebaseConfig = {
   apiKey: "AIzaSyDRqBoh11BuZHcqYkOPHrbtkudrbKbyD4",
   authDomain: "iot-uts-264a9.firebaseapp.com",
-  databaseURL:
-    "https://iot-uts-264a9-default-rtdb.asia-southeast1.firebasedatabase.app",
+  databaseURL: "https://iot-uts-264a9-default-rtdb.firebaseio.com",
   projectId: "iot-uts-264a9",
   storageBucket: "iot-uts-264a9.firebasestorage.app",
   messagingSenderId: "604382295790",
@@ -90,10 +89,17 @@ class FirebaseService {
   private authCallbacks: ((info: AuthUserInfo) => void)[] = [];
 
   public async init(databaseURL?: string) {
-    const targetUrl =
+    let targetUrl =
       databaseURL ||
       localStorage.getItem("fb_database_url") ||
       defaultFirebaseConfig.databaseURL;
+
+    // Normalisasi: buang trailing slash dan perbarui jika masih cache domain lama
+    targetUrl = targetUrl.trim().replace(/\/+$/, "");
+    if (targetUrl.includes("asia-southeast1.firebasedatabase.app")) {
+      targetUrl = defaultFirebaseConfig.databaseURL;
+    }
+    localStorage.setItem("fb_database_url", targetUrl);
 
     try {
       const cfg = {

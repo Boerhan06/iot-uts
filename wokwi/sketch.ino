@@ -29,7 +29,7 @@ const char* WIFI_SSID = "Wokwi-GUEST";
 const char* WIFI_PASS = "";
 
 // URL Realtime Database Project Firebase Anda
-String FIREBASE_HOST = "https://iot-uts-264a9-default-rtdb.asia-southeast1.firebasedatabase.app";
+String FIREBASE_HOST = "https://iot-uts-264a9-default-rtdb.firebaseio.com";
 String FIREBASE_AUTH = ""; // Kosongkan jika Security Rules diatur read/write
 
 // -------------------------------------------------------------

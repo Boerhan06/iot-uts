@@ -22,7 +22,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [dbUrl, setDbUrl] = useState(
     localStorage.getItem("fb_database_url") ||
-      "https://iot-uts-264a9-default-rtdb.asia-southeast1.firebasedatabase.app"
+      "https://iot-uts-264a9-default-rtdb.firebaseio.com"
   );
 
   const [params, setParams] = useState({
