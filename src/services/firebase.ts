@@ -25,20 +25,20 @@ import {
 } from "../types";
 
 export const defaultFirebaseConfig = {
-  apiKey: "AIzaSyDRqBoh11BuZHcqYkOPHrqbtkudrbKbyD4",
-  authDomain: "iot-uts-264a9.firebaseapp.com",
-  databaseURL: "https://iot-uts-264a9-default-rtdb.firebaseio.com",
-  projectId: "iot-uts-264a9",
-  storageBucket: "iot-uts-264a9.firebasestorage.app",
-  messagingSenderId: "604382295790",
-  appId: "1:604382295790:web:bdf60dcb3dfe89d289a5ff",
-  measurementId: "G-77J35ZD73W"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDRqBoh11BuZHcqYkOPHrqbtkudrbKbyD4",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "iot-uts-264a9.firebaseapp.com",
+  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL || "https://iot-uts-264a9-default-rtdb.firebaseio.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "iot-uts-264a9",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "iot-uts-264a9.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "604382295790",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:604382295790:web:bdf60dcb3dfe89d289a5ff",
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-77J35ZD73W"
 };
 
 export const defaultAuthCredentials = {
-  email: "esp32.kelompok6@gmail.com",
-  password: "Mkbsehat",
-  uid: "DJOtoRAtJqQOgBNzDBgkP2pTtY83"
+  email: import.meta.env.VITE_FIREBASE_USER_EMAIL || "esp32.kelompok6@gmail.com",
+  password: import.meta.env.VITE_FIREBASE_USER_PASSWORD || "Mkbsehat",
+  uid: import.meta.env.VITE_FIREBASE_USER_UID || "DJOtoRAtJqQOgBNzDBgkP2pTtY83"
 };
 
 class FirebaseService {

@@ -1,11 +1,11 @@
 /**
  * Automated Git Push & Sync Script
- * Target: https://github.com/elmoerasmo/Machine-Fault-UTS-IoT.git
+ * Target: https://github.com/Boerhan06/iot-uts.git
  */
 
 import { execSync } from "child_process";
 
-const REMOTE_URL = "https://github.com/elmoerasmo/Machine-Fault-UTS-IoT.git";
+const REMOTE_URL = "https://github.com/Boerhan06/iot-uts.git";
 const BRANCH = "main";
 
 function run(command, allowFail = false) {
