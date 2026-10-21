@@ -1,0 +1,860 @@
+<!doctype html>
+<html lang="id" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Topik 6: Machine Condition Monitoring & Protection System</title>
+    <meta
+      name="description"
+      content="Industrial IoT Dashboard for Machine Condition Monitoring with Operation Protection and Safety Interlocks"
+    />
+
+    <!-- Tailwind CSS via CDN as requested in Project Specification -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              brand: {
+                50: "#f0f9ff",
+                500: "#0284c7",
+                600: "#0369a1",
+                700: "#075985",
+              },
+            },
+          },
+        },
+      };
+    </script>
+
+    <link rel="stylesheet" href="styles.css" />
+
+    <!-- Firebase SDK v10 (Compat version for reliable standalone CDN usage) -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  </head>
+  <body
+    class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-sky-500 selection:text-white"
+  >
+    <!-- TOP BAR / HEADER & SYSTEM STATUS (PANEL 1) -->
+    <header
+      class="border-b border-slate-800 bg-slate-900/90 sticky top-0 z-40 px-4 lg:px-8 py-3"
+    >
+      <div
+        class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4"
+      >
+        <!-- System Identity -->
+        <div class="flex items-center gap-3">
+          <div
+            class="w-10 h-10 rounded-lg bg-sky-950 border border-sky-600 flex items-center justify-center text-sky-400 font-bold text-lg"
+          >
+            M6
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h1
+                class="text-base sm:text-lg font-bold tracking-tight text-white"
+              >
+                Industrial Spindle Monitor #06
+              </h1>
+              <span
+                class="px-2 py-0.5 text-xs font-semibold rounded bg-slate-800 border border-slate-700 text-slate-300"
+              >
+                Wokwi + ESP32
+              </span>
+            </div>
+            <p class="text-xs text-slate-400">
+              Sistem Monitoring Kondisi Mesin dengan Proteksi Operasi &
+              Interlock Keselamatan
+            </p>
+          </div>
+        </div>
+
+        <!-- State Machine Badge & Connection Stats -->
+        <div class="flex items-center flex-wrap gap-2.5 sm:gap-4">
+          <!-- State Machine Badge (4 States) -->
+          <div
+            class="flex items-center gap-2 px-3 py-1.5 rounded-lg border bg-slate-950"
+            id="state-badge-container"
+          >
+            <span class="text-xs text-slate-400 uppercase font-semibold"
+              >Status:</span
+            >
+            <div class="flex items-center gap-1.5">
+              <span
+                id="state-led"
+                class="w-2.5 h-2.5 rounded-full bg-slate-500"
+              ></span>
+              <span
+                id="machine-state-text"
+                class="text-xs sm:text-sm font-bold tracking-wider font-mono-numbers text-slate-300"
+              >
+                IDLE / STOPPED
+              </span>
+            </div>
+          </div>
+
+          <!-- Connection Heartbeat Indicator -->
+          <div
+            class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-800 bg-slate-950"
+          >
+            <div class="flex items-center gap-1.5">
+              <span
+                id="comm-led"
+                class="w-2.5 h-2.5 rounded-full bg-amber-500"
+              ></span>
+              <span
+                id="comm-status-text"
+                class="text-xs font-medium text-slate-300"
+              >
+                INITIALIZING
+              </span>
+            </div>
+            <span class="text-slate-600">|</span>
+            <span
+              class="text-[11px] text-slate-400 font-mono-numbers"
+              id="last-seen-text"
+            >
+              Last: --
+            </span>
+          </div>
+
+          <!-- Firebase Config / Simulator Toggle Button -->
+          <button
+            id="btn-open-config"
+            class="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 transition"
+          >
+            ⚙️ Setup Firebase
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- INTERLOCK / REJECTION NOTIFICATION BANNER -->
+    <div
+      id="interlock-banner"
+      class="hidden bg-rose-950/80 border-b border-rose-600 px-4 py-2.5 transition duration-300"
+    >
+      <div
+        class="max-w-7xl mx-auto flex items-center justify-between gap-3 text-xs sm:text-sm text-rose-200"
+      >
+        <div class="flex items-center gap-2">
+          <span class="text-rose-400 font-bold">⚠️ INTERLOCK REJECTED:</span>
+          <span id="interlock-banner-msg"
+            >Perintah ditolak oleh ESP32 demi keselamatan operasi.</span
+          >
+        </div>
+        <button
+          id="btn-close-interlock-banner"
+          class="text-rose-400 hover:text-white font-bold px-2 py-0.5"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+
+    <!-- MAIN DASHBOARD CONTENT -->
+    <main class="max-w-7xl mx-auto w-full px-4 lg:px-8 py-6 flex-1 space-y-6">
+      <!-- TOP GRID: MONITORING SENSORS (PANEL 2) + CONTROLS (PANEL 3) -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- LEFT: PANEL 2 - REAL-TIME SENSORS & ACTUATORS (7 Cols) -->
+        <section class="lg:col-span-7 space-y-4">
+          <div class="flex items-center justify-between">
+            <h2
+              class="text-sm font-semibold tracking-wider text-slate-400 uppercase flex items-center gap-2"
+            >
+              <span>📊</span> Telemetri Sensor & Status Aktuator
+            </h2>
+            <span
+              class="text-xs text-slate-500 font-mono-numbers"
+              id="telemetry-timestamp"
+            >
+              Timestamp: -
+            </span>
+          </div>
+
+          <!-- 2x2 Telemetry Metric Cards -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <!-- Card 1: Suhu Mesin (DHT22 / Temperature Sensor) -->
+            <div
+              class="p-4 rounded-xl border border-slate-800 bg-slate-900 flex flex-col justify-between relative overflow-hidden"
+              id="card-temperature"
+            >
+              <div class="flex items-start justify-between">
+                <div>
+                  <span
+                    class="text-xs font-semibold text-slate-400 tracking-wide uppercase"
+                    >Suhu Spindle</span
+                  >
+                  <p
+                    class="text-3xl font-extrabold font-mono-numbers mt-1"
+                    id="val-temperature"
+                  >
+                    --.-
+                    <span class="text-sm font-normal text-slate-400">°C</span>
+                  </p>
+                </div>
+                <span
+                  id="badge-temp-zone"
+                  class="px-2 py-1 text-[11px] font-bold rounded bg-slate-800 text-slate-300 border border-slate-700"
+                >
+                  NORMAL
+                </span>
+              </div>
+
+              <!-- Temperature Progress Visual -->
+              <div class="mt-4 space-y-1.5">
+                <div
+                  class="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden flex"
+                >
+                  <div
+                    id="bar-temperature"
+                    class="bg-emerald-500 h-full transition-all duration-300"
+                    style="width: 35%"
+                  ></div>
+                </div>
+                <div
+                  class="flex justify-between text-[11px] text-slate-400 font-mono-numbers"
+                >
+                  <span>0°C</span>
+                  <span class="text-amber-400" id="label-temp-warn"
+                    >Warn: 70°C</span
+                  >
+                  <span class="text-rose-400" id="label-temp-trip"
+                    >Trip: 85°C</span
+                  >
+                </div>
+              </div>
+
+              <p
+                class="text-[11px] text-slate-500 mt-2 font-mono-numbers"
+                id="hysteresis-desc"
+              >
+                Hysteresis: Turun 3.0°C untuk pulih
+              </p>
+            </div>
+
+            <!-- Card 2: Getaran Mesin (MPU6050 Vibration Magnitude) -->
+            <div
+              class="p-4 rounded-xl border border-slate-800 bg-slate-900 flex flex-col justify-between relative overflow-hidden"
+              id="card-vibration"
+            >
+              <div class="flex items-start justify-between">
+                <div>
+                  <span
+                    class="text-xs font-semibold text-slate-400 tracking-wide uppercase"
+                    >Vibrasi Resultan (g)</span
+                  >
+                  <p
+                    class="text-3xl font-extrabold font-mono-numbers mt-1"
+                    id="val-vibration"
+                  >
+                    -.--
+                    <span class="text-sm font-normal text-slate-400">g</span>
+                  </p>
+                </div>
+                <span
+                  id="badge-vib-zone"
+                  class="px-2 py-1 text-[11px] font-bold rounded bg-slate-800 text-slate-300 border border-slate-700"
+                >
+                  NORMAL
+                </span>
+              </div>
+
+              <!-- Vibration Progress Visual -->
+              <div class="mt-4 space-y-1.5">
+                <div
+                  class="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden"
+                >
+                  <div
+                    id="bar-vibration"
+                    class="bg-emerald-500 h-full transition-all duration-300"
+                    style="width: 25%"
+                  ></div>
+                </div>
+                <div
+                  class="flex justify-between text-[11px] text-slate-400 font-mono-numbers"
+                >
+                  <span>0.0 g</span>
+                  <span class="text-amber-400" id="label-vib-warn"
+                    >Warn: 2.5g</span
+                  >
+                  <span class="text-rose-400" id="label-vib-trip"
+                    >Trip: 4.0g</span
+                  >
+                </div>
+              </div>
+
+              <p class="text-[11px] text-slate-500 mt-2 font-mono-numbers">
+                Formula: a_total = √(a_x² + a_y² + a_z²)
+              </p>
+            </div>
+          </div>
+
+          <!-- Row 2: Duration Countdown Timer & Actuator Representations -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <!-- Card 3: Fault Duration Timer (Syarat Alarm Berdasarkan Durasi) -->
+            <div
+              class="p-4 rounded-xl border border-slate-800 bg-slate-900 flex flex-col justify-between"
+            >
+              <div class="flex items-center justify-between">
+                <span
+                  class="text-xs font-semibold text-slate-400 uppercase tracking-wide"
+                  >Durasi Gangguan Aktif</span
+                >
+                <span
+                  id="badge-timer-state"
+                  class="text-[11px] font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-400"
+                >
+                  INACTIVE
+                </span>
+              </div>
+
+              <div class="mt-3 flex items-baseline gap-2">
+                <span
+                  class="text-3xl font-extrabold font-mono-numbers text-slate-100"
+                  id="val-fault-duration"
+                >
+                  0.0
+                </span>
+                <span class="text-sm text-slate-400 font-mono-numbers">
+                  / <span id="label-fault-limit">5.0</span> detik toleransi
+                </span>
+              </div>
+
+              <div
+                class="w-full bg-slate-800 h-2 rounded-full overflow-hidden mt-3"
+              >
+                <div
+                  id="bar-fault-duration"
+                  class="bg-amber-500 h-full transition-all duration-200"
+                  style="width: 0%"
+                ></div>
+              </div>
+
+              <p class="text-[11px] text-slate-500 mt-2">
+                Mesin langsung TRIP jika gangguan bertahan melampaui batas
+                toleransi.
+              </p>
+            </div>
+
+            <!-- Card 4: Hardware Actuator Status (LED & Buzzer) -->
+            <div
+              class="p-4 rounded-xl border border-slate-800 bg-slate-900 flex flex-col justify-between"
+            >
+              <span
+                class="text-xs font-semibold text-slate-400 uppercase tracking-wide"
+                >Status Aktuator Fisik</span
+              >
+
+              <div class="grid grid-cols-2 gap-3 mt-3">
+                <!-- Motor LED Indicator -->
+                <div
+                  class="p-3 rounded-lg border border-slate-800 bg-slate-950 flex flex-col items-center justify-center text-center"
+                >
+                  <div
+                    id="led-motor-dot"
+                    class="w-4 h-4 rounded-full bg-slate-700 mb-1.5 led-indicator"
+                  ></div>
+                  <span class="text-[11px] font-semibold text-slate-400"
+                    >Motor Relai (LED)</span
+                  >
+                  <span
+                    id="text-motor-status"
+                    class="text-xs font-bold font-mono-numbers text-slate-300 mt-0.5"
+                  >
+                    STOPPED
+                  </span>
+                </div>
+
+                <!-- Buzzer Alarm Indicator -->
+                <div
+                  class="p-3 rounded-lg border border-slate-800 bg-slate-950 flex flex-col items-center justify-center text-center"
+                >
+                  <div
+                    id="led-buzzer-dot"
+                    class="w-4 h-4 rounded-full bg-slate-700 mb-1.5 led-indicator"
+                  ></div>
+                  <span class="text-[11px] font-semibold text-slate-400"
+                    >Buzzer Sirene</span
+                  >
+                  <span
+                    id="text-buzzer-status"
+                    class="text-xs font-bold font-mono-numbers text-slate-300 mt-0.5"
+                  >
+                    SILENT
+                  </span>
+                </div>
+              </div>
+
+              <p class="text-[11px] text-slate-500 mt-2 text-center">
+                Representasi aktuator terhubung ke GPIO ESP32.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- RIGHT: PANEL 3 - TWO-WAY CONTROL & INTERLOCK (5 Cols) -->
+        <section class="lg:col-span-5 space-y-4">
+          <div class="flex items-center justify-between">
+            <h2
+              class="text-sm font-semibold tracking-wider text-slate-400 uppercase flex items-center gap-2"
+            >
+              <span>🎮</span> Kontrol Dua Arah & Interlock
+            </h2>
+            <span
+              class="text-xs px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800"
+            >
+              Skenario 3 Ready
+            </span>
+          </div>
+
+          <div
+            class="p-5 rounded-xl border border-slate-800 bg-slate-900 space-y-5"
+          >
+            <!-- Mode Operasi: Auto vs Manual -->
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <label
+                  class="text-xs font-semibold text-slate-300 uppercase tracking-wide"
+                >
+                  Mode Kontrol Sistem
+                </label>
+                <span
+                  id="current-mode-label"
+                  class="text-xs font-bold font-mono-numbers text-sky-400"
+                >
+                  MODE: AUTO
+                </span>
+              </div>
+
+              <div
+                class="grid grid-cols-2 gap-2 bg-slate-950 p-1 rounded-lg border border-slate-800"
+              >
+                <button
+                  id="btn-mode-auto"
+                  class="py-2 text-xs font-bold rounded-md bg-sky-600 text-white transition"
+                >
+                  AUTO
+                </button>
+                <button
+                  id="btn-mode-manual"
+                  class="py-2 text-xs font-bold rounded-md text-slate-400 hover:text-white transition"
+                >
+                  MANUAL
+                </button>
+              </div>
+              <p class="text-[11px] text-slate-500 mt-1.5">
+                Di mode AUTO, proteksi otomatis memutus motor saat bahaya. Di
+                mode MANUAL, operator mengendalikan motor secara langsung via
+                remote.
+              </p>
+            </div>
+
+            <div class="border-t border-slate-800"></div>
+
+            <!-- Machine Commands -->
+            <div class="space-y-3">
+              <label
+                class="text-xs font-semibold text-slate-300 uppercase tracking-wide block"
+              >
+                Perintah Operasi Motor
+              </label>
+
+              <!-- Start & Stop Buttons -->
+              <div class="grid grid-cols-2 gap-3">
+                <button
+                  id="btn-cmd-start"
+                  class="py-2.5 px-4 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-500 transition flex items-center justify-center gap-1.5 shadow-sm active:scale-95"
+                >
+                  <span>▶</span> START MOTOR
+                </button>
+
+                <button
+                  id="btn-cmd-stop"
+                  class="py-2.5 px-4 text-xs font-bold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center justify-center gap-1.5 shadow-sm active:scale-95"
+                >
+                  <span>⏹</span> STOP MOTOR
+                </button>
+              </div>
+
+              <!-- Reset Trip Button -->
+              <button
+                id="btn-cmd-reset"
+                class="w-full py-2.5 px-4 text-xs font-bold rounded-lg bg-amber-600 hover:bg-amber-500 text-white border border-amber-500 transition flex items-center justify-center gap-1.5 shadow-sm active:scale-95"
+              >
+                <span>🔄</span> RESET TRIP (KEMBALI KE IDLE)
+              </button>
+
+              <!-- Important Interlock Guide Note -->
+              <div
+                class="p-3 rounded-lg border border-slate-800 bg-slate-950 text-slate-400 text-xs space-y-1"
+              >
+                <p class="font-semibold text-amber-400 flex items-center gap-1">
+                  <span>🛡️</span> Prinsip Interlock Keselamatan:
+                </p>
+                <p class="text-[11px] leading-relaxed">
+                  Tombol START dan RESET
+                  <strong>sengaja tidak di-disable</strong> di browser. Jika
+                  Anda klik START saat suhu tinggi atau saat status masih TRIP,
+                  ESP32 akan menolak perintah dan mencatatnya ke Event Log
+                  sebagai pembuktian <em>Skenario 3</em>.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- MIDDLE ROW: PARAMETERS & FAULT INJECTION (PANEL 4) -->
+      <section
+        class="p-5 rounded-xl border border-slate-800 bg-slate-900 space-y-4"
+      >
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2
+              class="text-sm font-semibold tracking-wider text-slate-300 uppercase flex items-center gap-2"
+            >
+              <span>⚙️</span> Panel 4: Pengaturan Ambang Batas & Injeksi
+              Gangguan (Fault Injection)
+            </h2>
+            <p class="text-xs text-slate-500">
+              Digunakan untuk demonstrasi Skenario 2 (Hysteresis), Skenario 4
+              (Sensor Error), dan Skenario 5 (Koneksi Putus).
+            </p>
+          </div>
+          <button
+            id="btn-save-params"
+            class="px-4 py-2 text-xs font-bold rounded-lg bg-sky-600 hover:bg-sky-500 text-white border border-sky-500 transition shadow"
+          >
+            💾 Kirim Parameter ke ESP32
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <!-- Param 1: Suhu Warning & Trip -->
+          <div
+            class="p-3.5 rounded-lg border border-slate-800 bg-slate-950 space-y-2"
+          >
+            <label class="text-xs font-medium text-slate-300 block"
+              >Ambang Suhu (°C)</label
+            >
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <span class="text-[10px] text-slate-500 block">Warning</span>
+                <input
+                  type="number"
+                  id="input-temp-warn"
+                  class="w-full px-2.5 py-1.5 text-xs font-mono-numbers rounded bg-slate-900 border border-slate-700 text-white focus:border-sky-500 outline-none"
+                  value="70.0"
+                  step="0.5"
+                />
+              </div>
+              <div>
+                <span class="text-[10px] text-slate-500 block">Trip</span>
+                <input
+                  type="number"
+                  id="input-temp-trip"
+                  class="w-full px-2.5 py-1.5 text-xs font-mono-numbers rounded bg-slate-900 border border-slate-700 text-white focus:border-sky-500 outline-none"
+                  value="85.0"
+                  step="0.5"
+                />
+              </div>
+            </div>
+            <div>
+              <span class="text-[10px] text-slate-500 block"
+                >Hysteresis (°C)</span
+              >
+              <input
+                type="number"
+                id="input-temp-hyst"
+                class="w-full px-2.5 py-1.5 text-xs font-mono-numbers rounded bg-slate-900 border border-slate-700 text-white focus:border-sky-500 outline-none"
+                value="3.0"
+                step="0.5"
+              />
+            </div>
+          </div>
+
+          <!-- Param 2: Vibrasi Warning & Trip -->
+          <div
+            class="p-3.5 rounded-lg border border-slate-800 bg-slate-950 space-y-2"
+          >
+            <label class="text-xs font-medium text-slate-300 block"
+              >Ambang Vibrasi (g)</label
+            >
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <span class="text-[10px] text-slate-500 block">Warning</span>
+                <input
+                  type="number"
+                  id="input-vib-warn"
+                  class="w-full px-2.5 py-1.5 text-xs font-mono-numbers rounded bg-slate-900 border border-slate-700 text-white focus:border-sky-500 outline-none"
+                  value="2.5"
+                  step="0.1"
+                />
+              </div>
+              <div>
+                <span class="text-[10px] text-slate-500 block">Trip</span>
+                <input
+                  type="number"
+                  id="input-vib-trip"
+                  class="w-full px-2.5 py-1.5 text-xs font-mono-numbers rounded bg-slate-900 border border-slate-700 text-white focus:border-sky-500 outline-none"
+                  value="4.0"
+                  step="0.1"
+                />
+              </div>
+            </div>
+            <div>
+              <span class="text-[10px] text-slate-500 block"
+                >Toleransi Waktu (detik)</span
+              >
+              <input
+                type="number"
+                id="input-fault-time"
+                class="w-full px-2.5 py-1.5 text-xs font-mono-numbers rounded bg-slate-900 border border-slate-700 text-white focus:border-sky-500 outline-none"
+                value="5"
+                step="1"
+              />
+            </div>
+          </div>
+
+          <!-- Fault Injection 1: Simulasi Sensor Rusak (Skenario 4) -->
+          <div
+            class="p-3.5 rounded-lg border border-slate-800 bg-slate-950 flex flex-col justify-between"
+          >
+            <div>
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-rose-400"
+                  >Fault Injection #1</span
+                >
+                <span
+                  class="text-[10px] font-mono-numbers px-1.5 py-0.5 rounded bg-slate-800 text-slate-400"
+                  >Skenario 4</span
+                >
+              </div>
+              <p class="text-xs font-medium text-slate-300 mt-1">
+                Sensor Error / NaN
+              </p>
+              <p class="text-[11px] text-slate-500 mt-1">
+                Mengirim sinyal sensor invalid (NaN atau nilai ekstrem) untuk
+                menguji transisi ESP32 ke Safe State.
+              </p>
+            </div>
+            <button
+              id="btn-toggle-fault-sensor"
+              class="w-full mt-3 py-1.5 text-xs font-bold rounded border border-rose-700 bg-rose-950/60 hover:bg-rose-900 text-rose-300 transition"
+            >
+              Pemicu: Sensor Rusak (OFF)
+            </button>
+          </div>
+
+          <!-- Fault Injection 2: Simulasi Komunikasi Firebase Gagal (Skenario 5) -->
+          <div
+            class="p-3.5 rounded-lg border border-slate-800 bg-slate-950 flex flex-col justify-between"
+          >
+            <div>
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-amber-400"
+                  >Fault Injection #2</span
+                >
+                <span
+                  class="text-[10px] font-mono-numbers px-1.5 py-0.5 rounded bg-slate-800 text-slate-400"
+                  >Skenario 5</span
+                >
+              </div>
+              <p class="text-xs font-medium text-slate-300 mt-1">
+                Firebase Offline / Timeout
+              </p>
+              <p class="text-[11px] text-slate-500 mt-1">
+                Simulasi jaringan putus: membuktikan kontrol lokal ESP32 tidak
+                terhambat (*non-blocking* loop).
+              </p>
+            </div>
+            <button
+              id="btn-toggle-fault-firebase"
+              class="w-full mt-3 py-1.5 text-xs font-bold rounded border border-amber-700 bg-amber-950/60 hover:bg-amber-900 text-amber-300 transition"
+            >
+              Pemicu: Jaringan Putus (OFF)
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- BOTTOM ROW: EVENT LOG REAL-TIME TABLE (PANEL 5) -->
+      <section
+        class="p-5 rounded-xl border border-slate-800 bg-slate-900 space-y-3"
+      >
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2
+              class="text-sm font-semibold tracking-wider text-slate-300 uppercase flex items-center gap-2"
+            >
+              <span>📜</span> Panel 5: Real-Time Event Log
+              (`/machine_monitor/event_logs`)
+            </h2>
+            <p class="text-xs text-slate-500">
+              Merekam transisi state machine, alarm trip, perubahan mode, serta
+              penolakan interlock keselamatan.
+            </p>
+          </div>
+
+          <!-- Log Filters & Actions -->
+          <div class="flex items-center gap-2">
+            <select
+              id="select-log-filter"
+              class="px-2.5 py-1 text-xs rounded bg-slate-950 border border-slate-700 text-slate-300 outline-none"
+            >
+              <option value="ALL">Semua Tipe Log</option>
+              <option value="INTERLOCK_REJECT">INTERLOCK_REJECT</option>
+              <option value="STATE">STATE</option>
+              <option value="ALARM">ALARM</option>
+              <option value="FAULT">FAULT</option>
+              <option value="MODE">MODE</option>
+            </select>
+            <button
+              id="btn-clear-log-view"
+              class="px-2.5 py-1 text-xs rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+            >
+              Bersihkan Tampilan
+            </button>
+          </div>
+        </div>
+
+        <!-- Scrollable Log Table -->
+        <div
+          class="rounded-lg border border-slate-800 bg-slate-950 overflow-hidden"
+        >
+          <div class="max-h-64 overflow-y-auto custom-scrollbar">
+            <table class="w-full text-left text-xs" id="table-event-logs">
+              <thead
+                class="bg-slate-900 text-slate-400 font-semibold border-b border-slate-800 sticky top-0"
+              >
+                <tr>
+                  <th class="py-2.5 px-4 w-36">Waktu</th>
+                  <th class="py-2.5 px-4 w-44">Tipe Kejadian</th>
+                  <th class="py-2.5 px-4">Pesan Detail Log</th>
+                </tr>
+              </thead>
+              <tbody
+                id="log-table-body"
+                class="divide-y divide-slate-800/60 font-mono-numbers"
+              >
+                <!-- Logs populated via JavaScript -->
+                <tr>
+                  <td
+                    colspan="3"
+                    class="py-4 text-center text-slate-500 font-sans"
+                  >
+                    Menunggu data log dari Firebase...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- FOOTER -->
+    <footer
+      class="border-t border-slate-800 py-4 px-4 text-center text-xs text-slate-500"
+    >
+      <div
+        class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2"
+      >
+        <p>
+          UTS Internet of Things — Topik 6 (Monitoring Kondisi Mesin dengan
+          Proteksi Operasi)
+        </p>
+        <p class="font-mono-numbers">
+          Wokwi Simulator • ESP32 DevKit • Firebase Realtime Database (HTTPS
+          REST)
+        </p>
+      </div>
+    </footer>
+
+    <!-- MODAL: SETUP FIREBASE / SIMULATOR CONTROLLER -->
+    <div
+      id="modal-firebase-config"
+      class="hidden fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-slate-900 border border-slate-700 rounded-xl max-w-lg w-full p-6 space-y-4 shadow-2xl"
+      >
+        <div
+          class="flex items-center justify-between border-b border-slate-800 pb-3"
+        >
+          <h3 class="text-base font-bold text-white flex items-center gap-2">
+            ⚙️ Pengaturan Koneksi Firebase
+          </h3>
+          <button
+            id="btn-close-modal"
+            class="text-slate-400 hover:text-white font-bold text-sm"
+          >
+            ✕
+          </button>
+        </div>
+
+        <p class="text-xs text-slate-400 leading-relaxed">
+          Masukkan URL Firebase Realtime Database Anda. Konfigurasi disimpan di
+          browser (<code class="text-sky-300">localStorage</code>) sehingga siap
+          digunakan untuk demo video.
+        </p>
+
+        <div class="space-y-3">
+          <div>
+            <label class="text-xs font-semibold text-slate-300 block mb-1">
+              Database URL (Wajib)
+            </label>
+            <input
+              type="url"
+              id="cfg-database-url"
+              placeholder="https://uts-iot-topik6-default-rtdb.firebaseio.com"
+              class="w-full px-3 py-2 text-xs rounded bg-slate-950 border border-slate-700 text-white font-mono-numbers focus:border-sky-500 outline-none"
+            />
+            <span class="text-[10px] text-slate-500"
+              >Contoh:
+              https://&lt;project-id&gt;-default-rtdb.firebaseio.com</span
+            >
+          </div>
+
+          <div>
+            <label class="text-xs font-semibold text-slate-300 block mb-1">
+              Database Auth Token / Secret (Opsional)
+            </label>
+            <input
+              type="password"
+              id="cfg-auth-token"
+              placeholder="Biarkan kosong jika Security Rules diset read/write"
+              class="w-full px-3 py-2 text-xs rounded bg-slate-950 border border-slate-700 text-white font-mono-numbers focus:border-sky-500 outline-none"
+            />
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div
+          class="flex flex-col sm:flex-row gap-2 pt-2 border-t border-slate-800"
+        >
+          <button
+            id="btn-save-firebase-cfg"
+            class="flex-1 py-2 text-xs font-bold rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition"
+          >
+            Simpan & Hubungkan
+          </button>
+          <button
+            id="btn-use-simulator"
+            class="flex-1 py-2 text-xs font-bold rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-600/50 transition"
+          >
+            🧪 Jalankan Mode Demo / Mock
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCRIPTS -->
+    <script src="app.js"></script>
+  </body>
+</html>

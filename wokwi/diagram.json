@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "author": "Kelompok UTS IoT Topik 6",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-devkit-c-v4",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-mpu6050",
+      "id": "mpu1",
+      "top": -140,
+      "left": -80,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-dht22",
+      "id": "dht1",
+      "top": -140,
+      "left": 120,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_start",
+      "top": 160,
+      "left": -90,
+      "attrs": { "color": "green", "label": "START" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_stop",
+      "top": 240,
+      "left": -90,
+      "attrs": { "color": "red", "label": "STOP" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_motor",
+      "top": 160,
+      "left": 140,
+      "attrs": { "color": "green", "label": "MOTOR" }
+    },
+    {
+      "type": "wokwi-buzzer",
+      "id": "buzzer1",
+      "top": 240,
+      "left": 140,
+      "attrs": { "label": "ALARM" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r1",
+      "top": 200,
+      "left": 170,
+      "attrs": { "value": "220" }
+    }
+  ],
+  "connections": [
+    ["esp:TX", "$serialMonitor:RX", "", []],
+    ["esp:RX", "$serialMonitor:TX", "", []],
+
+    ["mpu1:VCC", "esp:3V3", "red", ["v0"]],
+    ["mpu1:GND", "esp:GND.1", "black", ["v0"]],
+    ["mpu1:SDA", "esp:21", "blue", ["v0"]],
+    ["mpu1:SCL", "esp:22", "yellow", ["v0"]],
+
+    ["dht1:VCC", "esp:3V3", "red", ["v0"]],
+    ["dht1:GND", "esp:GND.1", "black", ["v0"]],
+    ["dht1:SDA", "esp:4", "green", ["v0"]],
+
+    ["btn_start:1.1", "esp:18", "green", ["v0"]],
+    ["btn_start:2.1", "esp:GND.2", "black", ["v0"]],
+
+    ["btn_stop:1.1", "esp:19", "red", ["v0"]],
+    ["btn_stop:2.1", "esp:GND.2", "black", ["v0"]],
+
+    ["led_motor:A", "esp:2", "green", ["v0"]],
+    ["led_motor:C", "r1:1", "black", ["v0"]],
+    ["r1:2", "esp:GND.2", "black", ["v0"]],
+
+    ["buzzer1:1", "esp:15", "orange", ["v0"]],
+    ["buzzer1:2", "esp:GND.2", "black", ["v0"]]
+  ]
+}

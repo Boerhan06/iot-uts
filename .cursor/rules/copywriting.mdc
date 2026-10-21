@@ -1,0 +1,15 @@
+---
+description: Human writing rules for UI copy, microcopy, and headings
+globs: ["**/*.tsx", "**/*.jsx", "**/*.html", "**/*.vue", "**/*.json"]
+alwaysApply: false
+---
+# Copywriting & Microcopy Rules
+
+## Forbidden AI-Words
+- Banned words: "delve", "testament", "revolutionize", "tapestry", "seamless", "game-changer", "elevate", "unleash", "embark".
+
+## Tone & Microcopy Standards
+- Write like a direct, competent human.
+- Button CTAs: Use plain verb + noun (e.g., "Start trial") instead of vague pitches.
+- Avoid empty fluff: Replace "Empowering teams worldwide" with concrete actions (e.g., "Automate invoice syncing in 2 minutes").
+- Sentence Rhythm: Mix short and medium sentences; ban the "rule of three" marketing cliché.

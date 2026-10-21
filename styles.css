@@ -1,0 +1,82 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
+
+:root {
+  --font-sans:
+    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #0b0f17;
+  color: #e2e8f0;
+}
+
+.font-mono-numbers {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom Scrollbar for Event Logs */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 3px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Trip Pulse Animation */
+@keyframes trip-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+    border-color: #ef4444;
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+    border-color: #b91c1c;
+  }
+}
+
+.animate-trip-pulse {
+  animation: trip-glow 1.5s infinite;
+}
+
+/* Warning Pulse Animation */
+@keyframes warning-glow {
+  0%,
+  100% {
+    border-color: #f59e0b;
+  }
+  50% {
+    border-color: #78350f;
+  }
+}
+
+.animate-warning-pulse {
+  animation: warning-glow 2s infinite;
+}
+
+/* LED Indicator States */
+.led-indicator {
+  transition: all 0.2s ease-in-out;
+}
+
+.led-motor-active {
+  background-color: #10b981;
+  box-shadow: 0 0 12px #10b981;
+}
+
+.led-buzzer-active {
+  background-color: #ef4444;
+  box-shadow: 0 0 14px #ef4444;
+  animation: trip-glow 0.8s infinite;
+}

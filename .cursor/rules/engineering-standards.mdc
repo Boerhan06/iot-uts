@@ -1,0 +1,42 @@
+---
+description: Engineering standards covering Semantic Git, Clean Code, UI components, TypeScript, and architectural principles
+globs: ["**/*"]
+alwaysApply: true
+---
+# Engineering Standards & Architecture Guardrails
+
+## 1. Semantic Git (Conventional Commits)
+- Format: `<type>(<scope>): <short summary in imperative mood>`
+- Permitted types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`.
+- Strict rule: Commit messages must explain the *why* and *what*, avoiding vague descriptions like "update code".
+
+## 2. Clean Code & Simplicity
+- Follow Single Responsibility Principle (SRP) and DRY without premature abstraction.
+- Functions must be concise (< 30 lines where practical), self-documenting, and avoid deep nesting (> 3 levels).
+- Avoid magic numbers and strings: define named constants.
+- Handle edge cases, errors, and invalid states explicitly (never swallow exceptions silently).
+
+## 3. UI Component Standards (Shadcn UI & Skill UI Principles)
+- Prefer accessible, composable, and unstyled/primitives-first component architecture.
+- Every interactive element must have clear focus rings, accessible labels (`aria-*`), and distinct hover/active states.
+- Avoid duplicate layout utility noise; extract reusable UI patterns into clean components.
+
+## 4. Strict TypeScript Standards (Matt Pocock Style)
+- Enable strict mode; never use `any` unless explicitly documenting an untypable boundary.
+- Prefer explicit return types on public boundaries and exported functions.
+- Use discriminated unions for modeling state machines and finite statuses.
+- Use `satisfies` and `as const` for strict literal type inferences.
+
+## 5. Browser Automation & Testing Guardrails (Browser-Use)
+- Ensure all interactive dashboard elements have stable, predictable `id` and `data-testid` attributes.
+- State changes must be observable via DOM attributes or explicit text content to facilitate automated verification.
+
+## 6. Code Graph & Context Management (Context7 & Sourcegraph Principles)
+- Keep dependencies explicit and modular.
+- Organize code by domain/feature boundaries rather than arbitrary technical buckets.
+- High-level orchestrators must not leak implementation details of low-level drivers.
+
+## 7. Data Layer & Integrations (Supabase / Firebase Realtime / Strix)
+- Enforce strict schemas and database validation rules.
+- Gracefully handle offline states, network latency, timeouts, and reconnects without blocking the main event loop.
+- Decouple telemetry ingestion from event logging and control pipelines.

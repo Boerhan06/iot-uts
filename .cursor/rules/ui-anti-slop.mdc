@@ -1,0 +1,15 @@
+---
+description: Guardrails for UI design, typography, and styling
+globs: ["**/*.tsx", "**/*.jsx", "**/*.html", "**/*.vue", "**/*.css"]
+alwaysApply: false
+---
+# UI & Typography Guardrails
+
+## Anti-Slop Visual Rules
+- DO NOT use generic AI aesthetic: purple/cyan blur gradients, unnecessary backdrop-blur, gigantic border-radii (`rounded-3xl` on small cards), or floating glowing cards.
+- Use solid semantic borders (e.g., `border-slate-200 dark:border-slate-800`), purposeful shadows, and ample negative space.
+
+## Typography System
+- Maximum 2 font families across the app.
+- Hierarchy: Differentiate heading levels strictly via scale (`text-3xl`, `text-xl`) and weight, not just arbitrary colors.
+- Readability: Set body text to `leading-relaxed` or `leading-normal` with max width `max-w-prose` (65-75ch) for long reading blocks.
