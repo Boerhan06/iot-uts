@@ -33,7 +33,7 @@ export const App: React.FC = () => {
   );
   const [isConnected, setIsConnected] = useState<boolean>(true);
   const [connectionStatus, setConnectionStatus] =
-    useState<string>("SIMULATOR ACTIVE");
+    useState<string>("ONLINE (FIREBASE)");
   const [interlockMessage, setInterlockMessage] = useState<string | null>(null);
 
   // Modals state

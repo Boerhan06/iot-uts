@@ -42,14 +42,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <aside className="w-64 bg-white border-r border-slate-100 flex flex-col justify-between py-6 px-4 shrink-0 shadow-soft select-none">
       <div>
-        {/* Logo matching Peymen style */}
+        {/* Logo Brand */}
         <div className="flex items-center gap-3 px-4 mb-8">
           <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white font-extrabold text-xl shadow-blueGlow">
-            P
+            T
           </div>
           <div className="flex items-baseline">
             <span className="text-xl font-extrabold text-slate-900 tracking-tight">
-              peymen
+              TYYYYAS
             </span>
             <span className="w-1.5 h-1.5 rounded-full bg-blue-600 ml-0.5"></span>
           </div>

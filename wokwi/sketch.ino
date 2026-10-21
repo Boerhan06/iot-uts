@@ -378,101 +378,111 @@ void syncFirebaseTelemetry() {
   WiFiClientSecure client;
   client.setInsecure(); // Mengabaikan validasi SSL certificate untuk Wokwi
 
-  HTTPClient http;
-  String url = FIREBASE_HOST + "/machine_monitor/telemetry.json";
-  if (FIREBASE_AUTH.length() > 0) url += "?auth=" + FIREBASE_AUTH;
+  // 1. Kirim ke /status.json (Schema Utama Konsol & Dashboard)
+  {
+    HTTPClient http;
+    String url = FIREBASE_HOST + "/status.json";
+    if (FIREBASE_AUTH.length() > 0) url += "?auth=" + FIREBASE_AUTH;
 
-  http.begin(client, url);
-  http.setTimeout(1500); // 1.5 detik timeout (tidak memblokir loop lokal)
-  http.addHeader("Content-Type", "application/json");
+    http.begin(client, url);
+    http.setTimeout(1200);
+    http.addHeader("Content-Type", "application/json");
 
-  StaticJsonDocument<256> doc;
-  doc["temperature"] = isnan(currentTemperature) ? -999.0 : currentTemperature;
-  doc["vibration_g"] = isnan(currentVibrationG) ? -999.0 : currentVibrationG;
-  doc["state"] = getStateString(currentState);
-  doc["motor_led"] = motorRunning;
-  doc["buzzer"] = buzzerActive;
-  doc["fault_duration_sec"] = faultDurationSec;
-  doc["timestamp"] = (unsigned long)(millis() / 1000);
+    StaticJsonDocument<256> doc;
+    doc["temperature"] = isnan(currentTemperature) ? -999.0 : currentTemperature;
+    doc["vibration"] = isnan(currentVibrationG) ? -999.0 : currentVibrationG;
+    doc["state"] = getStateString(currentState);
+    doc["relay"] = motorRunning ? "ON" : "OFF";
+    doc["sensorFault"] = simulateSensorFault;
+    doc["mode"] = currentMode;
+    doc["timestamp"] = (unsigned long)(millis());
 
-  String payload;
-  serializeJson(doc, payload);
-
-  int httpCode = http.PUT(payload);
-  if (httpCode > 0 && httpCode < 300) {
-    // Berhasil kirim telemetri
-  } else {
-    Serial.printf("[REST] Gagal PUT Telemetry, error: %d\n", httpCode);
+    String payload;
+    serializeJson(doc, payload);
+    http.PUT(payload);
+    http.end();
   }
-  http.end();
+
+  // 2. Kirim ke /machine_monitor/telemetry.json (Schema Kompatibilitas)
+  {
+    HTTPClient http;
+    String url = FIREBASE_HOST + "/machine_monitor/telemetry.json";
+    if (FIREBASE_AUTH.length() > 0) url += "?auth=" + FIREBASE_AUTH;
+
+    http.begin(client, url);
+    http.setTimeout(1200);
+    http.addHeader("Content-Type", "application/json");
+
+    StaticJsonDocument<256> doc;
+    doc["temperature"] = isnan(currentTemperature) ? -999.0 : currentTemperature;
+    doc["vibration_g"] = isnan(currentVibrationG) ? -999.0 : currentVibrationG;
+    doc["state"] = getStateString(currentState);
+    doc["motor_led"] = motorRunning;
+    doc["buzzer"] = buzzerActive;
+    doc["fault_duration_sec"] = faultDurationSec;
+    doc["timestamp"] = (unsigned long)(millis() / 1000);
+
+    String payload;
+    serializeJson(doc, payload);
+    http.PUT(payload);
+    http.end();
+  }
 }
 
 void syncFirebaseControls() {
   WiFiClientSecure client;
   client.setInsecure();
 
-  HTTPClient http;
-  String url = FIREBASE_HOST + "/machine_monitor/controls.json";
-  if (FIREBASE_AUTH.length() > 0) url += "?auth=" + FIREBASE_AUTH;
+  // 1. Baca dari root /.json
+  {
+    HTTPClient http;
+    String url = FIREBASE_HOST + "/.json";
+    if (FIREBASE_AUTH.length() > 0) url += "?auth=" + FIREBASE_AUTH;
 
-  http.begin(client, url);
-  http.setTimeout(1500);
+    http.begin(client, url);
+    http.setTimeout(1500);
 
-  int httpCode = http.GET();
-  if (httpCode > 0 && httpCode < 300) {
-    String resp = http.getString();
-    StaticJsonDocument<512> doc;
-    DeserializationError err = deserializeJson(doc, resp);
+    int httpCode = http.GET();
+    if (httpCode > 0 && httpCode < 300) {
+      String resp = http.getString();
+      StaticJsonDocument<1024> doc;
+      DeserializationError err = deserializeJson(doc, resp);
 
-    if (!err && !doc.isNull()) {
-      if (doc.containsKey("mode")) currentMode = doc["mode"].as<String>();
-      if (doc.containsKey("temp_warn_limit")) tempWarnLimit = doc["temp_warn_limit"];
-      if (doc.containsKey("temp_trip_limit")) tempTripLimit = doc["temp_trip_limit"];
-      if (doc.containsKey("temp_hysteresis")) tempHysteresis = doc["temp_hysteresis"];
-      if (doc.containsKey("vib_warn_limit")) vibWarnLimit = doc["vib_warn_limit"];
-      if (doc.containsKey("vib_trip_limit")) vibTripLimit = doc["vib_trip_limit"];
-      if (doc.containsKey("fault_time_limit_sec")) faultTimeLimitSec = doc["fault_time_limit_sec"];
+      if (!err && !doc.isNull()) {
+        if (doc.containsKey("mode")) currentMode = doc["mode"].as<String>();
+        if (doc.containsKey("tempWarning")) tempWarnLimit = doc["tempWarning"];
+        if (doc.containsKey("tempTrip")) tempTripLimit = doc["tempTrip"];
+        if (doc.containsKey("vibWarning")) vibWarnLimit = doc["vibWarning"];
+        if (doc.containsKey("vibTrip")) vibTripLimit = doc["vibTrip"];
+        if (doc.containsKey("simSensorFault")) simulateSensorFault = doc["simSensorFault"];
+        if (doc.containsKey("simFirebaseFailure")) simulateFirebaseFailure = doc["simFirebaseFailure"];
 
-      // Fault injection flags dari Dashboard
-      if (doc.containsKey("fault_sensor_corrupt")) {
-        simulateSensorFault = doc["fault_sensor_corrupt"];
-      }
-      if (doc.containsKey("fault_firebase_offline")) {
-        simulateFirebaseFailure = doc["fault_firebase_offline"];
-      }
-
-      // Proses Command dari Dashboard
-      if (doc.containsKey("command")) {
-        String cmd = doc["command"].as<String>();
-        if (cmd != "NONE") {
-          Serial.println("[CMD] Perintah diterima dari Cloud: " + cmd);
-
-          if (cmd == "START") {
-            executeStartCommand("CLOUD_DASHBOARD");
-          } else if (cmd == "STOP") {
-            executeStopCommand("CLOUD_DASHBOARD");
-          } else if (cmd == "RESET") {
-            executeResetCommand("CLOUD_DASHBOARD");
+        // Command handling
+        if (doc.containsKey("command")) {
+          String cmd = doc["command"].as<String>();
+          if (cmd != "NONE") {
+            Serial.println("[CMD] Perintah diterima dari Cloud: " + cmd);
+            if (cmd == "START") executeStartCommand("CLOUD_DASHBOARD");
+            else if (cmd == "STOP") executeStopCommand("CLOUD_DASHBOARD");
+            else if (cmd == "RESET") executeResetCommand("CLOUD_DASHBOARD");
+            resetFirebaseCommand();
           }
-
-          // Kembalikan command ke NONE agar tidak tereksekusi ganda
-          resetFirebaseCommand();
         }
       }
     }
+    http.end();
   }
-  http.end();
 }
 
 void resetFirebaseCommand() {
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
-  String url = FIREBASE_HOST + "/machine_monitor/controls/command.json";
+  String url = FIREBASE_HOST + "/command.json";
   if (FIREBASE_AUTH.length() > 0) url += "?auth=" + FIREBASE_AUTH;
 
   http.begin(client, url);
-  http.setTimeout(1200);
+  http.setTimeout(1000);
   http.PUT("\"NONE\"");
   http.end();
 }
@@ -485,24 +495,48 @@ void pushEventLog(const String& type, const String& message) {
 
   WiFiClientSecure client;
   client.setInsecure();
-  HTTPClient http;
-  String url = FIREBASE_HOST + "/machine_monitor/event_logs.json";
-  if (FIREBASE_AUTH.length() > 0) url += "?auth=" + FIREBASE_AUTH;
 
-  http.begin(client, url);
-  http.setTimeout(1500);
-  http.addHeader("Content-Type", "application/json");
+  // Push ke /events.json
+  {
+    HTTPClient http;
+    String url = FIREBASE_HOST + "/events.json";
+    if (FIREBASE_AUTH.length() > 0) url += "?auth=" + FIREBASE_AUTH;
 
-  StaticJsonDocument<256> doc;
-  doc["type"] = type;
-  doc["message"] = message;
-  doc["timestamp"] = String(millis() / 1000) + "s";
+    http.begin(client, url);
+    http.setTimeout(1200);
+    http.addHeader("Content-Type", "application/json");
 
-  String payload;
-  serializeJson(doc, payload);
+    StaticJsonDocument<256> doc;
+    doc["type"] = type;
+    doc["message"] = message;
+    doc["timestamp"] = (unsigned long)(millis());
 
-  http.POST(payload);
-  http.end();
+    String payload;
+    serializeJson(doc, payload);
+    http.POST(payload);
+    http.end();
+  }
+
+  // Push ke /machine_monitor/event_logs.json
+  {
+    HTTPClient http;
+    String url = FIREBASE_HOST + "/machine_monitor/event_logs.json";
+    if (FIREBASE_AUTH.length() > 0) url += "?auth=" + FIREBASE_AUTH;
+
+    http.begin(client, url);
+    http.setTimeout(1200);
+    http.addHeader("Content-Type", "application/json");
+
+    StaticJsonDocument<256> doc;
+    doc["type"] = type;
+    doc["message"] = message;
+    doc["timestamp"] = String(millis() / 1000) + "s";
+
+    String payload;
+    serializeJson(doc, payload);
+    http.POST(payload);
+    http.end();
+  }
 }
 
 String getStateString(MachineState st) {

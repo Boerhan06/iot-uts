@@ -17,6 +17,7 @@ import {
   Auth
 } from "firebase/auth";
 import {
+  MachineState,
   TelemetryData,
   ControlParameters,
   EventLog,
@@ -47,10 +48,13 @@ class FirebaseService {
   private isSimulated = false;
   private simInterval: number | null = null;
 
-  // Active state caches
+  private isConnected = true;
+  private currentConnectionStatus = "ONLINE (FIREBASE)";
+
+  // Active state caches matching Firebase RTDB
   public telemetry: TelemetryData = {
-    temperature: 42.5,
-    vibration_g: 0.85,
+    temperature: 34.6,
+    vibration_g: 0.0,
     state: "IDLE",
     motor_led: false,
     buzzer: false,
@@ -61,10 +65,10 @@ class FirebaseService {
   public controls: ControlParameters = {
     mode: "AUTO",
     command: "NONE",
-    temp_warn_limit: 70.0,
-    temp_trip_limit: 85.0,
+    temp_warn_limit: 35.0,
+    temp_trip_limit: 45.0,
     temp_hysteresis: 3.0,
-    vib_warn_limit: 2.5,
+    vib_warn_limit: 2.0,
     vib_trip_limit: 4.0,
     fault_time_limit_sec: 5,
     fault_sensor_corrupt: false,
@@ -224,41 +228,205 @@ class FirebaseService {
   private attachFirebaseListeners() {
     if (!this.db) return;
 
-    // 1. Telemetry
+    // Helper: update telemetry state
+    const applyTelemetry = (val: any) => {
+      if (!val) return;
+      this.isSimulated = false;
+      if (this.simInterval) {
+        clearInterval(this.simInterval);
+        this.simInterval = null;
+      }
+
+      const temp =
+        val.temperature !== undefined
+          ? Number(val.temperature)
+          : val.temp !== undefined
+          ? Number(val.temp)
+          : this.telemetry.temperature;
+
+      const vib =
+        val.vibration !== undefined
+          ? Number(val.vibration)
+          : val.vibration_g !== undefined
+          ? Number(val.vibration_g)
+          : this.telemetry.vibration_g;
+
+      const st = (val.state || this.telemetry.state) as MachineState;
+      const relayOn =
+        val.relay === "ON" ||
+        val.relay === true ||
+        val.motor_led === true ||
+        val.motorRunning === true;
+      const buzzOn =
+        val.buzzer === true || val.buzzerActive === true || st === "TRIP";
+      const faultDur =
+        val.fault_duration_sec !== undefined
+          ? Number(val.fault_duration_sec)
+          : val.faultDurationSec !== undefined
+          ? Number(val.faultDurationSec)
+          : this.telemetry.fault_duration_sec;
+
+      let ts = Date.now() / 1000;
+      if (typeof val.timestamp === "number") {
+        ts =
+          val.timestamp > 1000000000000 ? val.timestamp / 1000 : val.timestamp;
+      }
+
+      this.telemetry = {
+        temperature: temp,
+        vibration_g: vib,
+        state: st,
+        motor_led: relayOn,
+        buzzer: buzzOn,
+        fault_duration_sec: faultDur,
+        timestamp: ts
+      };
+      this.telemetryCallbacks.forEach((cb) => cb(this.telemetry));
+      this.notifyConnection(true, "ONLINE (FIREBASE)");
+    };
+
+    // 1A. Listen to /status (Real schema from ESP32 Wokwi / Console)
+    const statusRef = ref(this.db, "status");
+    onValue(statusRef, (snapshot) => {
+      const val = snapshot.val();
+      if (val) applyTelemetry(val);
+    });
+
+    // 1B. Listen to /machine_monitor/telemetry
     const telemetryRef = ref(this.db, "machine_monitor/telemetry");
     onValue(telemetryRef, (snapshot) => {
       const val = snapshot.val();
-      if (val) {
-        this.telemetry = { ...this.telemetry, ...val };
-        this.telemetryCallbacks.forEach((cb) => cb(this.telemetry));
-      }
+      if (val) applyTelemetry(val);
     });
 
-    // 2. Controls
+    // Helper: update controls state
+    const applyControls = (val: any) => {
+      if (!val) return;
+      this.controls = {
+        ...this.controls,
+        mode: (val.mode || this.controls.mode) as "AUTO" | "MANUAL",
+        command: val.command || val.cmd || this.controls.command,
+        temp_warn_limit:
+          val.tempWarning !== undefined
+            ? Number(val.tempWarning)
+            : val.temp_warn_limit !== undefined
+            ? Number(val.temp_warn_limit)
+            : this.controls.temp_warn_limit,
+        temp_trip_limit:
+          val.tempTrip !== undefined
+            ? Number(val.tempTrip)
+            : val.temp_trip_limit !== undefined
+            ? Number(val.temp_trip_limit)
+            : this.controls.temp_trip_limit,
+        temp_hysteresis:
+          val.tempHysteresis !== undefined
+            ? Number(val.tempHysteresis)
+            : val.temp_hysteresis !== undefined
+            ? Number(val.temp_hysteresis)
+            : this.controls.temp_hysteresis,
+        vib_warn_limit:
+          val.vibWarning !== undefined
+            ? Number(val.vibWarning)
+            : val.vib_warn_limit !== undefined
+            ? Number(val.vib_warn_limit)
+            : this.controls.vib_warn_limit,
+        vib_trip_limit:
+          val.vibTrip !== undefined
+            ? Number(val.vibTrip)
+            : val.vib_trip_limit !== undefined
+            ? Number(val.vib_trip_limit)
+            : this.controls.vib_trip_limit,
+        fault_time_limit_sec:
+          val.faultTimeLimitSec !== undefined
+            ? Number(val.faultTimeLimitSec)
+            : val.fault_time_limit_sec !== undefined
+            ? Number(val.fault_time_limit_sec)
+            : this.controls.fault_time_limit_sec,
+        fault_sensor_corrupt:
+          val.simSensorFault !== undefined
+            ? Boolean(val.simSensorFault)
+            : val.fault_sensor_corrupt !== undefined
+            ? Boolean(val.fault_sensor_corrupt)
+            : this.controls.fault_sensor_corrupt,
+        fault_firebase_offline:
+          val.simFirebaseFailure !== undefined
+            ? Boolean(val.simFirebaseFailure)
+            : val.fault_firebase_offline !== undefined
+            ? Boolean(val.fault_firebase_offline)
+            : this.controls.fault_firebase_offline
+      };
+      this.controlsCallbacks.forEach((cb) => cb(this.controls));
+    };
+
+    // 2A. Listen to root for controls (tempTrip, tempWarning, vibTrip, vibWarning, mode, simSensorFault)
+    const rootRef = ref(this.db);
+    onValue(rootRef, (snapshot) => {
+      const val = snapshot.val();
+      if (val) applyControls(val);
+    });
+
+    // 2B. Listen to machine_monitor/controls
     const controlsRef = ref(this.db, "machine_monitor/controls");
     onValue(controlsRef, (snapshot) => {
       const val = snapshot.val();
-      if (val) {
-        this.controls = { ...this.controls, ...val };
-        this.controlsCallbacks.forEach((cb) => cb(this.controls));
-      }
+      if (val) applyControls(val);
     });
 
-    // 3. Event Logs
+    // Helper: update event logs
+    const applyEvents = (val: any) => {
+      if (!val) return;
+      const loaded: EventLog[] = Object.keys(val).map((k) => {
+        const item = val[k];
+        let timestamp = new Date().toLocaleTimeString("id-ID");
+        if (typeof item === "string") {
+          return { id: k, timestamp, type: "STATE", message: item };
+        }
+        if (typeof item.timestamp === "number") {
+          timestamp = new Date(
+            item.timestamp > 1000000000000 ? item.timestamp : item.timestamp * 1000
+          ).toLocaleTimeString("id-ID");
+        } else if (item.timestamp) {
+          timestamp = String(item.timestamp);
+        } else if (item.time) {
+          timestamp = String(item.time);
+        }
+        const msg =
+          item.message ||
+          item.msg ||
+          item.event ||
+          item.description ||
+          JSON.stringify(item);
+        const upper = msg.toUpperCase();
+        let type: EventLog["type"] =
+          item.type ||
+          (upper.includes("TRIP") || upper.includes("ALARM")
+            ? "ALARM"
+            : upper.includes("DITOLAK") || upper.includes("REJECT")
+            ? "INTERLOCK_REJECT"
+            : upper.includes("MODE")
+            ? "MODE"
+            : "STATE");
+        return { id: k, timestamp, type, message: msg };
+      });
+      this.eventLogs = loaded;
+      this.logsCallbacks.forEach((cb) => cb(this.eventLogs));
+    };
+
+    // 3A. Listen to /events
+    const eventsRef = query(ref(this.db, "events"), limitToLast(60));
+    onValue(eventsRef, (snapshot) => {
+      const val = snapshot.val();
+      if (val) applyEvents(val);
+    });
+
+    // 3B. Listen to /machine_monitor/event_logs
     const logsRef = query(
       ref(this.db, "machine_monitor/event_logs"),
       limitToLast(60)
     );
     onValue(logsRef, (snapshot) => {
       const val = snapshot.val();
-      if (val) {
-        const loaded: EventLog[] = Object.keys(val).map((k) => ({
-          id: k,
-          ...val[k]
-        }));
-        this.eventLogs = loaded;
-        this.logsCallbacks.forEach((cb) => cb(this.eventLogs));
-      }
+      if (val) applyEvents(val);
     });
   }
 
@@ -272,7 +440,10 @@ class FirebaseService {
     }
 
     if (this.db) {
+      update(ref(this.db), { mode });
+      set(ref(this.db, "status/mode"), mode);
       set(ref(this.db, "machine_monitor/controls/mode"), mode);
+      this.logEvent("MODE", `Mode operasi diubah menjadi ${mode}`);
     }
   }
 
@@ -283,7 +454,14 @@ class FirebaseService {
     }
 
     if (this.db) {
+      const cmdId = Date.now();
+      update(ref(this.db), {
+        cmdId: cmdId,
+        command: cmd
+      });
+      set(ref(this.db, "status/command"), cmd);
       set(ref(this.db, "machine_monitor/controls/command"), cmd);
+      this.logEvent("STATE", `Perintah ${cmd} dikirim ke ESP32 (cmdId: ${cmdId})`);
     }
   }
 
@@ -296,7 +474,22 @@ class FirebaseService {
     }
 
     if (this.db) {
+      const updates: any = {};
+      if (params.temp_warn_limit !== undefined) {
+        updates.tempWarning = params.temp_warn_limit;
+      }
+      if (params.temp_trip_limit !== undefined) {
+        updates.tempTrip = params.temp_trip_limit;
+      }
+      if (params.vib_warn_limit !== undefined) {
+        updates.vibWarning = params.vib_warn_limit;
+      }
+      if (params.vib_trip_limit !== undefined) {
+        updates.vibTrip = params.vib_trip_limit;
+      }
+      update(ref(this.db), updates);
       update(ref(this.db, "machine_monitor/controls"), params);
+      this.logEvent("PARAM", "Parameter ambang batas disimpan ke Firebase");
     }
   }
 
@@ -310,7 +503,15 @@ class FirebaseService {
           : "Fault Injection Skenario 4: Sensor dinormalkan"
       );
     } else if (this.db) {
+      update(ref(this.db), { simSensorFault: active });
+      set(ref(this.db, "status/sensorFault"), active);
       set(ref(this.db, "machine_monitor/controls/fault_sensor_corrupt"), active);
+      this.logEvent(
+        "FAULT",
+        active
+          ? "Fault Injection Skenario 4: Sensor Suhu rusak diaktifkan"
+          : "Fault Injection Skenario 4: Sensor dinormalkan"
+      );
     }
     this.controlsCallbacks.forEach((cb) => cb(this.controls));
   }
@@ -329,9 +530,16 @@ class FirebaseService {
         active ? "SIM_FAIL (OFFLINE)" : "SIMULATOR ACTIVE"
       );
     } else if (this.db) {
+      update(ref(this.db), { simFirebaseFailure: active });
       set(
         ref(this.db, "machine_monitor/controls/fault_firebase_offline"),
         active
+      );
+      this.logEvent(
+        "FAULT",
+        active
+          ? "Fault Injection Skenario 5: Koneksi Firebase disimulasikan gagal"
+          : "Fault Injection Skenario 5: Koneksi Firebase dinormalkan"
       );
     }
     this.controlsCallbacks.forEach((cb) => cb(this.controls));
@@ -484,6 +692,8 @@ class FirebaseService {
   }
 
   private notifyConnection(connected: boolean, status: string) {
+    this.isConnected = connected;
+    this.currentConnectionStatus = status;
     this.connectionCallbacks.forEach((cb) => cb(connected, status));
   }
 
@@ -509,6 +719,7 @@ class FirebaseService {
 
   public onConnection(cb: (connected: boolean, status: string) => void) {
     this.connectionCallbacks.push(cb);
+    cb(this.isConnected, this.currentConnectionStatus);
   }
 
   public onAuth(cb: (info: AuthUserInfo) => void) {
