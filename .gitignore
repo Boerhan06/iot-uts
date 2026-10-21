@@ -22,6 +22,9 @@ pnpm-debug.log*
 .env.production
 .env.development
 
+# Firebase local cache
+.firebase/
+
 # Editor & OS files
 .DS_Store
 Thumbs.db
