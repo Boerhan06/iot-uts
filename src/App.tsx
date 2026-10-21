@@ -7,11 +7,17 @@ import { TelemetryChart } from "./components/TelemetryChart";
 import { MachineOperations } from "./components/MachineOperations";
 import { FaultAndModeCard } from "./components/FaultAndModeCard";
 import { StateRadialCard } from "./components/StateRadialCard";
+import { LiveEventLogSection } from "./components/LiveEventLogSection";
 import { InterlockAlert } from "./components/InterlockAlert";
 import { EventLogModal } from "./components/EventLogModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { firebaseService } from "./services/firebase";
-import { TelemetryData, ControlParameters, EventLog } from "./types";
+import {
+  TelemetryData,
+  ControlParameters,
+  EventLog,
+  AuthUserInfo
+} from "./types";
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>("dashboard");
@@ -22,6 +28,9 @@ export const App: React.FC = () => {
     firebaseService.controls
   );
   const [eventLogs, setEventLogs] = useState<EventLog[]>([]);
+  const [authInfo, setAuthInfo] = useState<AuthUserInfo>(
+    firebaseService.authInfo
+  );
   const [isConnected, setIsConnected] = useState<boolean>(true);
   const [connectionStatus, setConnectionStatus] =
     useState<string>("SIMULATOR ACTIVE");
@@ -38,6 +47,7 @@ export const App: React.FC = () => {
     // Attach subscriptions
     firebaseService.onTelemetry((data) => setTelemetry({ ...data }));
     firebaseService.onControls((data) => setControls({ ...data }));
+    firebaseService.onAuth((info) => setAuthInfo({ ...info }));
     firebaseService.onLogs((logs) => {
       setEventLogs([...logs]);
       // Detect latest rejection for interlock banner
@@ -71,15 +81,17 @@ export const App: React.FC = () => {
   const handleStartSimulator = () => firebaseService.startSimulator();
 
   return (
-    <div className="min-h-screen bg-[#f3f6fc] flex flex-col justify-center items-center p-3 lg:p-6 font-sans">
+    <div className="min-h-screen bg-[#f5f5f7] flex flex-col justify-center items-center p-2 sm:p-4 lg:p-6 font-sans">
+      
       {/* Interlock Rejection Toast (Framer Motion) */}
       <InterlockAlert
         message={interlockMessage}
         onDismiss={() => setInterlockMessage(null)}
       />
 
-      {/* Main Centered App Container matching Peymen style */}
-      <div className="w-full max-w-[1440px] bg-[#fbfcfe] rounded-[2.5rem] shadow-card border border-slate-200/60 overflow-hidden flex flex-col md:flex-row min-h-[92vh]">
+      {/* Main Centered App Container */}
+      <div className="w-full max-w-[1440px] bg-[#fbfcfe] rounded-[2rem] shadow-[0_4px_24px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] border border-slate-200/60 overflow-hidden flex flex-col md:flex-row min-h-[92vh]">
+        
         {/* Left Sidebar */}
         <Sidebar
           activeTab={activeTab}
@@ -89,9 +101,9 @@ export const App: React.FC = () => {
         />
 
         {/* Right Main Dashboard Area */}
-        <main className="flex-1 bg-[#f3f6fc] p-5 lg:p-8 overflow-y-auto custom-scrollbar flex flex-col justify-between">
+        <main className="flex-1 bg-[#f5f5f7] p-4 sm:p-6 lg:p-8 overflow-y-auto custom-scrollbar flex flex-col justify-between space-y-6">
           <div>
-            {/* Header */}
+            {/* Header with Apple Auth Badge */}
             <Header
               connectionStatus={connectionStatus}
               isConnected={isConnected}
@@ -100,11 +112,12 @@ export const App: React.FC = () => {
                   (l) => l.type === "ALARM" || l.type === "INTERLOCK_REJECT"
                 ).length
               }
+              authInfo={authInfo}
               onOpenLogs={() => setIsLogsOpen(true)}
               onOpenSettings={() => setIsSettingsOpen(true)}
             />
 
-            {/* Row 1: Top 3 Metric Cards */}
+            {/* Row 1: Top 4 Metric Cards */}
             <MetricCards telemetry={telemetry} controls={controls} />
 
             {/* Row 2: Middle Hero Banner & Spline Waveform Chart */}
@@ -121,9 +134,11 @@ export const App: React.FC = () => {
             </div>
 
             {/* Row 3: Bottom Operations, Safety Interlock, and Dark Radial Card */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
               <MachineOperations
+                controls={controls}
                 motorRunning={telemetry.motor_led}
+                onSetMode={handleSetMode}
                 onStart={handleStartMotor}
                 onStop={handleStopMotor}
                 onReset={handleResetTrip}
@@ -131,9 +146,9 @@ export const App: React.FC = () => {
 
               <FaultAndModeCard
                 controls={controls}
-                onSetMode={handleSetMode}
                 onToggleSensorFault={handleToggleSensorFault}
                 onToggleFirebaseFault={handleToggleFirebaseFault}
+                onOpenSettings={() => setIsSettingsOpen(true)}
               />
 
               <StateRadialCard
@@ -142,20 +157,26 @@ export const App: React.FC = () => {
                   telemetry.state === "NORMAL"
                     ? 100
                     : telemetry.state === "WARNING"
-                      ? 65
-                      : 0
+                    ? 65
+                    : 0
                 }
               />
             </div>
+
+            {/* Row 4: Live Real-Time Event Logs Table */}
+            <LiveEventLogSection
+              logs={eventLogs}
+              onOpenFullModal={() => setIsLogsOpen(true)}
+            />
           </div>
 
-          {/* Clean minimal footer */}
-          <footer className="mt-8 pt-4 border-t border-slate-200/60 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 gap-2">
+          {/* Clean Apple-style minimal footer */}
+          <footer className="pt-4 border-t border-slate-200/60 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 gap-2">
             <span>
-              UTS Internet of Things — Topik 6 (Monitoring Kondisi Mesin)
+              UTS Internet of Things — Topik 6 (Monitoring Kondisi Mesin dengan Proteksi Operasi)
             </span>
             <span className="font-mono-numbers">
-              ESP32 DevKit • Firebase Realtime Database • Wokwi
+              User: {authInfo.email} • ESP32 Wokwi • Firebase Realtime Database
             </span>
           </footer>
         </main>

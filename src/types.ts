@@ -30,6 +30,12 @@ export interface EventLog {
   message: string;
 }
 
+export interface AuthUserInfo {
+  email: string | null;
+  uid: string | null;
+  isAuthenticated: boolean;
+}
+
 export interface SystemStats {
   healthScore: number;
   totalUptimeSec: number;

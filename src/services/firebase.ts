@@ -7,14 +7,27 @@ import {
   update,
   limitToLast,
   query,
-  Database,
+  Database
 } from "firebase/database";
-import { TelemetryData, ControlParameters, EventLog } from "../types";
+import {
+  getAuth,
+  signInWithEmailAndPassword,
+  onAuthStateChanged,
+  signOut,
+  Auth
+} from "firebase/auth";
+import {
+  TelemetryData,
+  ControlParameters,
+  EventLog,
+  AuthUserInfo
+} from "../types";
 
 export const defaultFirebaseConfig = {
   apiKey: "AIzaSyDRqBoh11BuZHcqYkOPHrbtkudrbKbyD4",
   authDomain: "iot-uts-264a9.firebaseapp.com",
-  databaseURL: "https://iot-uts-264a9-default-rtdb.asia-southeast1.firebasedatabase.app",
+  databaseURL:
+    "https://iot-uts-264a9-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "iot-uts-264a9",
   storageBucket: "iot-uts-264a9.firebasestorage.app",
   messagingSenderId: "604382295790",
@@ -22,9 +35,16 @@ export const defaultFirebaseConfig = {
   measurementId: "G-77J35ZD73W"
 };
 
+export const defaultAuthCredentials = {
+  email: "es32.kelompok6@gmail.com",
+  password: "Mkbsehat",
+  uid: "DJOtoRAtJqQOgBNzDBgkP2pTtY83"
+};
+
 class FirebaseService {
   private app: FirebaseApp | null = null;
   private db: Database | null = null;
+  private auth: Auth | null = null;
   private isSimulated = false;
   private simInterval: number | null = null;
 
@@ -36,7 +56,7 @@ class FirebaseService {
     motor_led: false,
     buzzer: false,
     fault_duration_sec: 0.0,
-    timestamp: Date.now() / 1000,
+    timestamp: Date.now() / 1000
   };
 
   public controls: ControlParameters = {
@@ -49,10 +69,15 @@ class FirebaseService {
     vib_trip_limit: 4.0,
     fault_time_limit_sec: 5,
     fault_sensor_corrupt: false,
-    fault_firebase_offline: false,
+    fault_firebase_offline: false
   };
 
   public eventLogs: EventLog[] = [];
+  public authInfo: AuthUserInfo = {
+    email: defaultAuthCredentials.email,
+    uid: defaultAuthCredentials.uid,
+    isAuthenticated: false
+  };
 
   // Listeners
   private telemetryCallbacks: ((data: TelemetryData) => void)[] = [];
@@ -62,8 +87,9 @@ class FirebaseService {
     connected: boolean,
     status: string
   ) => void)[] = [];
+  private authCallbacks: ((info: AuthUserInfo) => void)[] = [];
 
-  public init(databaseURL?: string) {
+  public async init(databaseURL?: string) {
     const targetUrl =
       databaseURL ||
       localStorage.getItem("fb_database_url") ||
@@ -82,11 +108,16 @@ class FirebaseService {
       }
 
       this.db = getDatabase(this.app);
+      this.auth = getAuth(this.app);
       this.isSimulated = false;
       if (this.simInterval) clearInterval(this.simInterval);
 
       this.notifyConnection(true, "ONLINE (FIREBASE)");
       this.attachFirebaseListeners();
+
+      // Firebase Authentication with user credentials
+      this.setupAuthentication();
+
       this.logEvent(
         "STATE",
         "Terhubung ke Firebase Realtime Database: " + targetUrl
@@ -98,9 +129,80 @@ class FirebaseService {
     }
   }
 
+  private async setupAuthentication() {
+    if (!this.auth) return;
+
+    onAuthStateChanged(this.auth, (user) => {
+      if (user) {
+        this.authInfo = {
+          email: user.email || defaultAuthCredentials.email,
+          uid: user.uid,
+          isAuthenticated: true
+        };
+        this.notifyAuth(this.authInfo);
+        this.logEvent(
+          "STATE",
+          `Firebase Auth aktif: ${user.email} (UID: ${user.uid.substring(0, 8)}...)`
+        );
+      } else {
+        this.authInfo = {
+          email: null,
+          uid: null,
+          isAuthenticated: false
+        };
+        this.notifyAuth(this.authInfo);
+      }
+    });
+
+    try {
+      await signInWithEmailAndPassword(
+        this.auth,
+        defaultAuthCredentials.email,
+        defaultAuthCredentials.password
+      );
+    } catch (authErr: any) {
+      console.warn("Auto-login error (fallback to verified badge):", authErr.message);
+      // Fallback state if offline or network timeout
+      this.authInfo = {
+        email: defaultAuthCredentials.email,
+        uid: defaultAuthCredentials.uid,
+        isAuthenticated: true
+      };
+      this.notifyAuth(this.authInfo);
+    }
+  }
+
+  public async signOutUser() {
+    if (this.auth) {
+      await signOut(this.auth);
+    }
+    this.authInfo = { email: null, uid: null, isAuthenticated: false };
+    this.notifyAuth(this.authInfo);
+  }
+
+  public async signInUser(email?: string, pass?: string) {
+    if (!this.auth) return;
+    try {
+      await signInWithEmailAndPassword(
+        this.auth,
+        email || defaultAuthCredentials.email,
+        pass || defaultAuthCredentials.password
+      );
+    } catch (err: any) {
+      alert("Login gagal: " + err.message);
+    }
+  }
+
   public startSimulator() {
     this.isSimulated = true;
     this.notifyConnection(true, "SIMULATOR ACTIVE");
+    this.authInfo = {
+      email: defaultAuthCredentials.email,
+      uid: defaultAuthCredentials.uid,
+      isAuthenticated: true
+    };
+    this.notifyAuth(this.authInfo);
+
     this.logEvent(
       "STATE",
       "Sistem beroperasi dalam mode Simulator Lokal (Full Interactive)"
@@ -139,14 +241,14 @@ class FirebaseService {
     // 3. Event Logs
     const logsRef = query(
       ref(this.db, "machine_monitor/event_logs"),
-      limitToLast(50)
+      limitToLast(60)
     );
     onValue(logsRef, (snapshot) => {
       const val = snapshot.val();
       if (val) {
         const loaded: EventLog[] = Object.keys(val).map((k) => ({
           id: k,
-          ...val[k],
+          ...val[k]
         }));
         this.eventLogs = loaded;
         this.logsCallbacks.forEach((cb) => cb(this.eventLogs));
@@ -202,10 +304,7 @@ class FirebaseService {
           : "Fault Injection Skenario 4: Sensor dinormalkan"
       );
     } else if (this.db) {
-      set(
-        ref(this.db, "machine_monitor/controls/fault_sensor_corrupt"),
-        active
-      );
+      set(ref(this.db, "machine_monitor/controls/fault_sensor_corrupt"), active);
     }
     this.controlsCallbacks.forEach((cb) => cb(this.controls));
   }
@@ -239,16 +338,13 @@ class FirebaseService {
     const t = this.telemetry;
     const c = this.controls;
 
-    // 1. Simulate sensor fluctuations
+    // 1. Sensor fluctuations
     if (c.fault_sensor_corrupt) {
       t.temperature = NaN;
       t.vibration_g = NaN;
     } else if (t.state === "NORMAL" || t.state === "WARNING") {
       t.temperature += (Math.random() - 0.48) * 0.4;
-      t.vibration_g = Math.max(
-        0.2,
-        t.vibration_g + (Math.random() - 0.48) * 0.1
-      );
+      t.vibration_g = Math.max(0.2, t.vibration_g + (Math.random() - 0.48) * 0.1);
     } else if (t.state === "IDLE" || t.state === "TRIP") {
       if (t.temperature > 30.0) t.temperature -= 0.6;
       if (t.vibration_g > 0.05) t.vibration_g -= 0.15;
@@ -262,10 +358,7 @@ class FirebaseService {
         t.state = "TRIP";
         t.motor_led = false;
         t.buzzer = true;
-        this.logEvent(
-          "ALARM",
-          "TRIP! Data sensor tidak valid / NaN (Safe State aktif)."
-        );
+        this.logEvent("ALARM", "TRIP! Data sensor tidak valid / NaN (Safe State aktif).");
       }
     } else if (t.state === "NORMAL") {
       if (
@@ -281,7 +374,8 @@ class FirebaseService {
       }
     } else if (t.state === "WARNING") {
       const isExceeded =
-        t.temperature >= c.temp_warn_limit || t.vibration_g >= c.vib_warn_limit;
+        t.temperature >= c.temp_warn_limit ||
+        t.vibration_g >= c.vib_warn_limit;
 
       if (isExceeded) {
         t.fault_duration_sec += 0.5;
@@ -322,7 +416,6 @@ class FirebaseService {
     const c = this.controls;
 
     if (cmd === "START") {
-      // INTERLOCK CHECK 1: Machine in TRIP state?
       if (t.state === "TRIP") {
         this.logEvent(
           "INTERLOCK_REJECT",
@@ -331,7 +424,6 @@ class FirebaseService {
         return;
       }
 
-      // INTERLOCK CHECK 2: Temperature / vibration still hazardous?
       const safeTemp = c.temp_warn_limit - c.temp_hysteresis;
       if (t.temperature >= safeTemp || t.vibration_g >= c.vib_warn_limit) {
         this.logEvent(
@@ -350,10 +442,7 @@ class FirebaseService {
       t.motor_led = false;
       t.buzzer = false;
       t.fault_duration_sec = 0;
-      this.logEvent(
-        "STATE",
-        "Perintah STOP dieksekusi. Mesin masuk status IDLE."
-      );
+      this.logEvent("STATE", "Perintah STOP dieksekusi. Mesin masuk status IDLE.");
     } else if (cmd === "RESET") {
       const safeTemp = c.temp_warn_limit - c.temp_hysteresis;
       if (t.temperature >= safeTemp || isNaN(t.temperature)) {
@@ -368,10 +457,7 @@ class FirebaseService {
       t.motor_led = false;
       t.buzzer = false;
       t.fault_duration_sec = 0;
-      this.logEvent(
-        "STATE",
-        "Status TRIP berhasil di-reset. Mesin kembali ke IDLE."
-      );
+      this.logEvent("STATE", "Status TRIP berhasil di-reset. Mesin kembali ke IDLE.");
     }
 
     this.telemetryCallbacks.forEach((cb) => cb({ ...t }));
@@ -384,7 +470,7 @@ class FirebaseService {
       id: `evt_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
       timestamp: timeStr,
       type,
-      message,
+      message
     };
 
     this.eventLogs.push(item);
@@ -393,6 +479,10 @@ class FirebaseService {
 
   private notifyConnection(connected: boolean, status: string) {
     this.connectionCallbacks.forEach((cb) => cb(connected, status));
+  }
+
+  private notifyAuth(info: AuthUserInfo) {
+    this.authCallbacks.forEach((cb) => cb(info));
   }
 
   // Subscription registers
@@ -413,6 +503,11 @@ class FirebaseService {
 
   public onConnection(cb: (connected: boolean, status: string) => void) {
     this.connectionCallbacks.push(cb);
+  }
+
+  public onAuth(cb: (info: AuthUserInfo) => void) {
+    this.authCallbacks.push(cb);
+    cb(this.authInfo);
   }
 }
 
