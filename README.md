@@ -1,5 +1,6 @@
 # Industrial Spindle Monitor #06 (UTS IoT - Topik 6)
 
+
 **Sistem Monitoring Kondisi Mesin dengan Proteksi Operasi & Interlock Keselamatan**
 
 Proyek ini dirancang untuk memenuhi **6 Persyaratan Teknis** dan **5 Skenario Pengujian** pada Panduan Tugas Mini Project UTS Internet of Things (ITO).
